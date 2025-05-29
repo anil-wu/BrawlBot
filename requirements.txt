@@ -1,0 +1,6 @@
+av
+numpy
+opencv-python-headless
+gymnasium
+stable-baselines3
+torch
