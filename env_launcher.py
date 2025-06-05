@@ -1,18 +1,7 @@
-"""
-env_launcher.py  (forward-only)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-功能：
-1) adb push scrcpy-server.jar
-2) 后台启动 scrcpy-server
-3) 点亮并（可选）划屏解锁
-4) 仅使用 **adb forward** 建立视频流隧道
-"""
-
 from __future__ import annotations
 import shlex, subprocess, time
 from pathlib import Path
 from typing import Optional
-
 
 class ScrcpyLauncher:
     def __init__(
@@ -102,30 +91,3 @@ class ScrcpyLauncher:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL if hide_err else None,
         )
-
-
-# ———————————— CLI 演示 ————————————
-if __name__ == "__main__":
-    import argparse
-
-    cli = argparse.ArgumentParser(description="One-click scrcpy env launcher (forward only)")
-    cli.add_argument("--serial", help="设备序列号，可省略")
-    cli.add_argument("--video-port", type=int, default=1234)
-    cli.add_argument("--jar", default="scrcpy-server.jar")
-    cli.add_argument("--version", default="3.2")
-    args = cli.parse_args()
-
-    launcher = ScrcpyLauncher(
-        serial=args.serial,
-        video_port=args.video_port,
-        server_jar=args.jar,
-        server_version=args.version,
-    )
-
-    try:
-        with launcher:
-            print(">>> 环境已就绪，按 Ctrl+C 退出 …")
-            while True:
-                time.sleep(1)
-    except KeyboardInterrupt:
-        pass
