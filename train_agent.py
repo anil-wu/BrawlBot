@@ -1,56 +1,65 @@
-"""Parallel PPO training harness using Stable‑Baselines3."""
+from __future__ import annotations
 import argparse
-from functools import partial
-
+import time
+import yaml
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.vec_env import DummyVecEnv
 
-from scrcpy_env import ScrcpyEnv
+from scrcpy_env     import ScrcpyEnv
+from env_launcher   import ScrcpyLauncher
 
+def main(config):
+    SCREEN_DIM = config["display"]["screen"]
+    FRAME_DIM = config["display"]["frame"]
+    ADB_BRIDGE = config["adb_bridge"]
 
-def make_env(rank: int, host: str, base_video_port: int, base_control_port: int):
-    """Utility for SubprocVecEnv ― each worker gets its own port pair."""
-    def _init():
-        env = ScrcpyEnv(
-            host=host,
-            video_port=base_video_port + 2 * rank,
-            control_port=base_control_port + 2 * rank,
-        )
-        set_random_seed(rank)
-        return env
-    return _init
+    host  = config["adb_bridge"]["host"]
+    port  = config["adb_bridge"]["port"]
+    serial = config["adb_bridge"]["serial"]
+
+    steps = 1_000_000
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workers", type=int, default=4, help="how many envs")
-    parser.add_argument("--steps", type=int, default=1_000_000,
-                        help="total training timesteps")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--video-port", type=int, default=27183)
-    parser.add_argument("--control-port", type=int, default=27184)
-    args = parser.parse_args()
-
-    env_fns = [make_env(i, args.host, args.video_port, args.control_port)
-               for i in range(args.workers)]
-    vec_env = SubprocVecEnv(env_fns, start_method="fork")
-
-    model = PPO(
-        "CnnPolicy",
-        vec_env,
-        n_steps=256,
-        batch_size=64,
-        learning_rate=3e-4,
-        clip_range=0.2,
-        tensorboard_log="./runs",
-        verbose=1,
+    # 1️⃣ 启动 scrcpy-server 与 ADB forward
+    launcher = ScrcpyLauncher(
+        serial = serial,
+        video_por t= port,
     )
-    model.learn(total_timesteps=args.steps)
-    model.save("ppo_scrcpy")
 
-    vec_env.close()
+    try:
+        with launcher:
+            # 2️⃣ 创建单环境（用 DummyVecEnv 适配 SB3）
+            def make_env():
+                return ScrcpyEnv(
+                    host = host,
+                    video_port = port,
+                    serial = serial,
+                )
+
+            vec_env = DummyVecEnv([make_env])
+
+            # # 3️⃣ 训练 PPO
+            model = PPO(
+                "CnnPolicy",
+                vec_env,
+                n_steps=256,
+                batch_size=64,
+                learning_rate=3e-4,
+                clip_range=0.2,
+                tensorboard_log="./runs",
+                verbose=1,
+            )
+            model.learn(total_timesteps = steps)
+            model.save("ppo_scrcpy_single")
+
+            vec_env.close()
+    except KeyboardInterrupt:
+        print("\n[train_agent] 手动中断，已安全退出。")
+
 
 
 if __name__ == "__main__":
-    main()
+
+with open('config.yaml') as f:
+    config = yaml.safe_load(f)
+    main(config)

@@ -1,0 +1,8 @@
+display:
+  screen: [2712, 1220]
+  frame: [1080, 486]
+
+adb_bridge:
+  port: 1234
+  host: "localhost"
+  serial: ""

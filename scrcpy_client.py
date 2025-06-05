@@ -17,7 +17,7 @@ class ScrcpyClient:
         server_jar: str | Path = "scrcpy-server.jar",
         server_version: str = "3.2",
         server_opts: str = "tunnel_forward=true audio=false control=false cleanup=false raw_stream=true max_size=1920",
-        resize_to: Optional[tuple[int, int]] = (864, 1920),
+        resize_to: Optional[tuple[int, int]] = (864, 1080),
     ) -> None:
         self.host = host
         self.port = port
@@ -51,6 +51,8 @@ class ScrcpyClient:
         self._release_adb_tunnel()
         if self._server_proc and self._server_proc.poll() is None:
             self._server_proc.terminate()
+        if  self._decoder:
+            self._decoder.close()
 
     def tap(self, x: int, y: int):
         if not self._adb_control:
