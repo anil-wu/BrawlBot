@@ -56,19 +56,25 @@ class ScrcpyEnv(gym.Env):
 
     def execute_battle_flow(self):
         isStart = False
+        isClickBattleBtn = False
+        isClickQuitBtn = False
+        isClickContinueBtn = False
+        isClickAgainBtn = False
+
         while not isStart:  # 等待游戏开始
-            time.sleep(1)
+            time.sleep(0.1)
             frame = self.decoder.read()
+            if frame is None: continue
             dets = self.detector.detect(frame)
 
             if len(dets) == 0:
                 continue
             for d in dets:
                 cls_name = d["cls"]
-                print(cls_name)
+                if d["conf"] < 0.8:
+                    continue
                 pot = self.detector.bbox_center2screen_pos(d["xyxy"])
-                if cls_name == "BattleBtn":
-                    print(cls_name, pot)
+                if cls_name == "BattleBtn" :
                     self.ctrl.tap(*pot)
                     continue
 
@@ -84,7 +90,7 @@ class ScrcpyEnv(gym.Env):
                     self.ctrl.tap(*pot)
                     continue
 
-                if cls_name == "StartGameTips":
+                if cls_name in ["SkillCD", "SkillFull"]:
                     isStart =True
                     break
 
@@ -93,18 +99,23 @@ class ScrcpyEnv(gym.Env):
         super().reset(seed=seed)
         self.frames.clear()
 
+        print("战斗准备中...")
         self.execute_battle_flow()
+        print("战斗开始")
 
         f = self.decoder.read()
         for _ in range(self.frames.maxlen):
             self.frames.append(f)
+
         return self._obs(), {}
 
     def step(self, action: int):
-        print(f"执行游戏动作: {action}")
         self.frame_num +=1
-        reward = 0.0
+        time.sleep(0.3)
 
+        reward = 0.0
+        print(f"Setp: {self.frame_num} --------------------------")
+        print(f"执行动作: {action}")
         # —— 动作 → 触控 ——
         if 1 <= action <= 8:                       # 摇杆方向
             dx, dy = DIR_VECS[action - 1]
@@ -116,7 +127,6 @@ class ScrcpyEnv(gym.Env):
         elif action == 10:                         # 技能
             self.ctrl.tap(*SKILL_BTN)
 
-
         # —— 获取新帧 ——
         frame = self.decoder.read()
         self.save_frame(self.frame_num, frame)
@@ -125,15 +135,10 @@ class ScrcpyEnv(gym.Env):
         dets = self.detector.detect(frame)
         terminated =  self._is_game_over(dets)
 
-
-
-        # state = get_game_state(frame, dets)
-        # state = get_game_state(frame, action, state)
-
-        # —— 计算奖励 / 终止（需按游戏逻辑改写） ——
-        reward += self._compute_reward(dets, action)
-        # if state == GameState.DEFEAT:
-        #     reward -= 30
+        if terminated:
+            reward += self._settlement_reward()
+        else:
+            reward += self._compute_reward(dets, action)
 
         truncated = False
         info = {}
@@ -152,21 +157,78 @@ class ScrcpyEnv(gym.Env):
         c, h, w = arr.shape[0] * arr.shape[1], arr.shape[2], arr.shape[3]
         return arr.reshape(c, h, w)                       # (k*3, H, W)
 
-    def _compute_reward(self, dets, action:int) -> float:
+    def _settlement_reward(self)->float:
+        print("进入奖励结算环节")
+        is_settlement_status = False
+        while True:
+            time.sleep(1)
+            frame = self.decoder.read()
+            dets = self.detector.detect(frame)
 
+            if len(dets) == 0:
+                continue
+
+            for d in dets:
+                cls_name = d["cls"]
+                if is_settlement_status:
+                    if cls_name == "RankedFirst":
+                        print("战斗胜利， 加分!")
+                        return 1000
+                    elif cls_name == "RankedSecond":
+                        print("位列第二名， 加分!")
+                        return 100
+                    else:
+                        print("战斗失败， 扣分!")
+                        return -1000
+
+                pot = self.detector.bbox_center2screen_pos(d["xyxy"])
+                if cls_name == "QuitBtn":
+                    self.ctrl.tap(*pot)
+                    continue
+
+                if cls_name == "ContinueBtn":
+                    is_settlement_status = True
+                    continue
+
+    def _compute_reward(self, dets, action:int) -> float:
+        if len(dets) == 0:
+            return False
+
+        reward = 0
+
+        if action == 0:
+            print("未有操作，扣分!")
+            reward -= 5
+
+        for d in dets:
+            cls_name = d["cls"]
+            if cls_name == "DefeatTips":
+                print("游戏结束")
+            if cls_name == "SkillCD" and action == 10:
+                print("操作冷却中的技能，扣分!")
+                reward -= 5
+            if cls_name == "LowHP":
+                print("血量过低， 扣分!")
+                reward -= 5
+            if cls_name == "KillEnemy":
+                print("击杀敌人， 加分!")
+                reward += 20
 
         return 0
 
     def _is_game_over(self, dets) -> bool:
         if len(dets) == 0:
-            print("没有检测到物体")
             return False
+
         for d in dets:
             cls_name = d["cls"]
-            print("_is_game_over",cls_name, cls_name == "DefeatTips")
+
             if cls_name == "DefeatTips":
                 print("游戏结束")
                 return True
+            if cls_name in ["SkillCD", "SkillFull"]:
+                return False
+
         return False
 
     def render(self, mode="human"):
@@ -180,4 +242,3 @@ class ScrcpyEnv(gym.Env):
 
     def close(self):
         self.decoder = None
-        # cv2.destroyAllWindows()

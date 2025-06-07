@@ -13,7 +13,7 @@ class ScrcpyLauncher:
         server_version: str = "3.2",
         server_opts: str = (
             "tunnel_forward=true audio=false control=false "
-            "cleanup=false raw_stream=true max_size=1080 power_on=true"
+            "cleanup=false raw_stream=true max_size=1088 power_on=true"
         ),
         unlock_screen: bool = True,
     ):

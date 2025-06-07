@@ -1,6 +1,6 @@
 display:
   screen: [2712, 1220]
-  frame: [1080, 486]
+  frame: [1088, 489]
 
 adb_bridge:
   port: 1234

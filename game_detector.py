@@ -19,7 +19,7 @@ class GameDetector:
         self.model = YOLO(weight)       # 不再手动 .to()
         self.k = k                      # 屏幕分辨率与帧图片分辨率的比例
 
-    def detect(self, frame, conf=0.4, imgsz=1080):
+    def detect(self, frame, conf=0.4, imgsz=1088):
         result = self.model.predict(
             source=frame,
             imgsz=imgsz,
@@ -43,21 +43,6 @@ class GameDetector:
         cy = (bbox[1] + bbox[3]) / 2
 
         # 统一放大
-        print(cx, cy, self.k)
         X_screen = cx * self.k
         Y_screen = cy * self.k
         return (int(X_screen), int(Y_screen))
-
-    # def get_game_state(self, frame, ctrl:AdbControl):
-    #     dets = self.detect(frame)
-    #     # 收集坐标
-    #     coords = {}        # dict[str, list[tuple]]
-    #     for d in dets:
-    #         cls_name = d["cls"]
-    #         # if cls_name in INTERESTED_CLASSES:
-    #         print(cls_name)
-    #         # if cls_name == "BattleBtn":
-    #         coords[cls_name] = bbox_center2screen_pos(d["xyxy"], k=self.k)
-    #         pot = bbox_center2screen_pos(d["xyxy"], k=self.k)
-    #         ctrl.tap(*pot)
-    #     return coords

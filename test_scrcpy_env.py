@@ -51,7 +51,6 @@ def main(config):
                 vec_env.execute_battle_flow()
                 start_train = True
                 while start_train:
-                    time.sleep(0.1)
                     obs, r, done, trunc, info = vec_env.step(vec_env.action_space.sample())
                     if done:
                         Episode += 1
