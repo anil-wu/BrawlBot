@@ -1,7 +1,7 @@
 import yaml
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-
+from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor  # 新增导入
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback  # 新增回调函数
 
 from adb_control import AdbControl
 from scrcpy_env import ScrcpyEnv
@@ -19,7 +19,6 @@ def main(config):
     serial = config["adb_bridge"]["serial"]
 
     k =  SCREEN_DIM[0]/FRAME_DIM[0]
-
 
     # 1️⃣ 启动 scrcpy-server 与 ADB forward
     launcher = ScrcpyLauncher(
@@ -45,6 +44,27 @@ def main(config):
 
             vec_env = DummyVecEnv([make_env])
 
+            # ===== 修复监控包装 =====
+            # 使用默认监控
+            vec_env = VecMonitor(vec_env)
+
+            # ===== 新增回调函数 =====
+            # 模型检查点回调（每500步保存一次）
+            checkpoint_callback = CheckpointCallback(
+                save_freq=20,
+                save_path="./checkpoints/",
+                name_prefix="brawl_model"
+            )
+
+            # 评估回调（每200步评估一次）
+            eval_callback = EvalCallback(
+                vec_env,
+                best_model_save_path="./best_models/",
+                eval_freq=10,
+                deterministic=True,
+                render=False
+            )
+
             steps = 100
             # # 3️⃣ 训练 PPO
             model = PPO(
@@ -54,10 +74,16 @@ def main(config):
                 batch_size=64,
                 learning_rate=3e-4,
                 clip_range=0.2,
-                tensorboard_log="./runs",
+                tensorboard_log="./runs",  # 确保TensorBoard日志目录存在
                 verbose=1,
             )
-            model.learn(total_timesteps = steps)
+
+            # ===== 训练时传入回调 =====
+            model.learn(
+                total_timesteps=steps,
+                callback=[checkpoint_callback, eval_callback],  # 添加回调
+                tb_log_name="荒野乱斗智能玩家"  # TensorBoard实验名称
+            )
             model.save("BrawlStars")
             vec_env.close()
 
