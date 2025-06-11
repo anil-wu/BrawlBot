@@ -56,6 +56,7 @@ def main(config):
                     decoder,
                     ctrl,
                     detector,
+                    launcher,
                     resize,
                 )
 

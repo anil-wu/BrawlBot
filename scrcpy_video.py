@@ -18,17 +18,9 @@ class VideoDecoder:
         resize: Optional[Tuple[int, int]] = None,
     ):
         url = f"tcp://{host}:{port}"
-        self.container = av.open(url, options={"fflags": "nobuffer"})
-        self.stream = self.container.streams.video[0]
-        self.stream.thread_type = "AUTO"
-
+        self.url = url
         self.resize = resize
-        self._last_frame: Optional[np.ndarray] = None
-        self._lock = threading.Lock()
-
-        self._running = True
-        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self._thread.start()
+        self.link_av()
 
     # ---------------- 公共接口 ----------------
     def read(self, *, block: bool = True, timeout: float = 1.0) -> np.ndarray:
@@ -52,6 +44,18 @@ class VideoDecoder:
         self._running = False
         self._thread.join()
         self.container.close()
+
+    def link_av(self):
+        self.container = av.open(self.url, options={"fflags": "nobuffer"})
+        self.stream = self.container.streams.video[0]
+        self.stream.thread_type = "AUTO"
+
+        self._last_frame: Optional[np.ndarray] = None
+        self._lock = threading.Lock()
+
+        self._running = True
+        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self._thread.start()
 
     # ---------------- 内部线程 ----------------
     def _reader_loop(self):

@@ -9,6 +9,7 @@ from gymnasium.spaces import Box, Discrete
 
 from scrcpy_video import VideoDecoder
 from adb_control import AdbControl
+from env_launcher import ScrcpyLauncher
 from game_detector import GameDetector, GameState
 
 # ——————————— 屏幕&摇杆参数 ———————————
@@ -34,12 +35,14 @@ class ScrcpyEnv(gym.Env):
                  decoder: VideoDecoder,
                  ctrl: AdbControl,
                  detector: GameDetector,
+                 launch:ScrcpyLauncher,
                  resize: Tuple[int, int],
                  frame_stack: int = 4):
         super().__init__()
         self.decoder = decoder #VideoDecoder(host, video_port, resize=resize)
         self.ctrl = ctrl #AdbControl(serial)
         self.detector = detector
+        self.launch = launch
         self.resize = resize
         self.frame_stack = frame_stack          # ← 保存一下，后面要用
 
@@ -63,6 +66,9 @@ class ScrcpyEnv(gym.Env):
         isStart = False
         while not isStart:  # 等待游戏开始
             time.sleep(0.1)
+            if not self.ctrl.check_adb_link() :
+                break
+
             frame = self.decoder.read()
             if frame is None: continue
             dets = self.detector.detect(frame)
@@ -100,27 +106,51 @@ class ScrcpyEnv(gym.Env):
 
     # -------------- Gym API --------------
     def reset(self, *, seed=None, options=None):
+        print("重置环境")
         super().reset(seed=seed)
-        self.frames.clear()
+        while True:
+            time.sleep(1)
+            # 加入循环体？等待重连
+            if not self.ctrl.check_adb_link() :
+                print("等待设备重新连接")
+                while True :
+                    time.sleep(1)
+                    if self.ctrl.check_adb_link() :
+                        print("设备已连接")
+                        time.sleep(10)
+                        self.launch.launch()
+                        self.decoder.link_av()
+                        break
+
+            self.frames.clear()
+            print("尝试启动战斗")
+            self.execute_battle_flow()
+            f = self.decoder.read()
+            for _ in range(self.frames.maxlen):
+                self.frames.append(f)
+
+            self.last_action = None  # 新增：重置动作记录
+            self.action_counter = 0  # 新增：重置计数器
+
+            if self.ctrl.check_adb_link() :
+                break
+            else:
+                print("设备已断开连接 ")
+
         self.batel_num +=1
-        print("战斗准备中... 战斗场次", self.batel_num)
-
-        self.execute_battle_flow()
-        print("战斗开始")
-
-        f = self.decoder.read()
-        for _ in range(self.frames.maxlen):
-            self.frames.append(f)
-
-        self.last_action = None  # 新增：重置动作记录
-        self.action_counter = 0  # 新增：重置计数器
-
+        print("开始战斗... 场次", self.batel_num)
         return self._obs(), {}
 
     def step(self, action: int):
         self.frame_num +=1
         print(f"Setp: {self.frame_num} --------------------------")
         print(f"执行动作: {action}")
+
+        terminated = False
+        truncated = False
+        info = {}
+        reward = 0.0
+
         # —— 动作 → 触控 ——
         if 1 <= action <= 8:                       # 摇杆方向
             dx, dy = DIR_VECS[action - 1]
@@ -132,11 +162,21 @@ class ScrcpyEnv(gym.Env):
         elif action == 10:                         # 技能
             self.ctrl.tap(*SKILL_BTN)
 
+        if  not self.ctrl.check_adb_link() :
+            terminated = True
+            obs = self._obs()
+            self.decoder.close()
+            print("[train_agent] ADB连接已断开，已安全退出。")
+            return obs, reward, terminated, truncated, info
+
         time.sleep(0.1)
 
-        reward = 0.0
+
         # —— 获取新帧 ——
         frame = self.decoder.read()
+        if frame is None:
+            print("帧读取失败")
+
         self.save_frame(self.frame_num, frame)
         self.frames.append(frame)
 
@@ -147,9 +187,6 @@ class ScrcpyEnv(gym.Env):
             reward += self._settlement_reward()
         else:
             reward += self._compute_reward(dets, action)
-
-        truncated = False
-        info = {}
 
         return self._obs(), reward, terminated, truncated, info
 
@@ -170,6 +207,8 @@ class ScrcpyEnv(gym.Env):
         is_settlement_status = False
         while True:
             time.sleep(1)
+            if not self.ctrl.check_adb_link() :
+                break
             frame = self.decoder.read()
             dets = self.detector.detect(frame)
 
@@ -204,8 +243,8 @@ class ScrcpyEnv(gym.Env):
         if action in [1, 8]:  # 左/左上
             reward += 1  # 鼓励其他方向
 
-        # if action in [9, 10]:  # 左/左上
-        #     reward += 1  # 鼓励其他方向
+        if action in [9, 10]:  # 左/左上
+            reward += 1  # 鼓励其他方向
 
         if action == 0:
             print("未有操作，扣分!")
