@@ -43,8 +43,13 @@ class ScrcpyEnv(gym.Env):
         self.resize = resize
         self.frame_stack = frame_stack          # ← 保存一下，后面要用
 
+        self.batel_num = 0
+
         # === 动作空间同原来 ===
         self.action_space = Discrete(11)
+
+        self.last_action = None  # 新增：记录上一个有效动作
+        self.action_counter = 0  # 新增：连续执行同一动作的计数器
 
         # —— 关键：把 observation_space 改成 (C, H, W) ——
         h, w = resize[1], resize[0]
@@ -56,11 +61,6 @@ class ScrcpyEnv(gym.Env):
 
     def execute_battle_flow(self):
         isStart = False
-        isClickBattleBtn = False
-        isClickQuitBtn = False
-        isClickContinueBtn = False
-        isClickAgainBtn = False
-
         while not isStart:  # 等待游戏开始
             time.sleep(0.1)
             frame = self.decoder.read()
@@ -86,6 +86,10 @@ class ScrcpyEnv(gym.Env):
                     self.ctrl.tap(*pot)
                     continue
 
+                if cls_name == "ExitCheckout":
+                    self.ctrl.tap(*pot)
+                    continue
+
                 if cls_name == "AgainBtn":
                     self.ctrl.tap(*pot)
                     continue
@@ -98,8 +102,9 @@ class ScrcpyEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.frames.clear()
+        self.batel_num +=1
+        print("战斗准备中... 战斗场次", self.batel_num)
 
-        print("战斗准备中...")
         self.execute_battle_flow()
         print("战斗开始")
 
@@ -107,13 +112,13 @@ class ScrcpyEnv(gym.Env):
         for _ in range(self.frames.maxlen):
             self.frames.append(f)
 
+        self.last_action = None  # 新增：重置动作记录
+        self.action_counter = 0  # 新增：重置计数器
+
         return self._obs(), {}
 
     def step(self, action: int):
         self.frame_num +=1
-        time.sleep(0.3)
-
-        reward = 0.0
         print(f"Setp: {self.frame_num} --------------------------")
         print(f"执行动作: {action}")
         # —— 动作 → 触控 ——
@@ -121,12 +126,15 @@ class ScrcpyEnv(gym.Env):
             dx, dy = DIR_VECS[action - 1]
             tx = int(JOY_CX + dx * JOY_R)
             ty = int(JOY_CY + dy * JOY_R)
-            self.ctrl.swipe(JOY_CX, JOY_CY, tx, ty, dur_ms=100)
+            self.ctrl.swipe(JOY_CX, JOY_CY, tx, ty, dur_ms=300)
         elif action == 9:                          # 普通攻击
             self.ctrl.tap(*ATTACK_BTN)
         elif action == 10:                         # 技能
             self.ctrl.tap(*SKILL_BTN)
 
+        time.sleep(0.1)
+
+        reward = 0.0
         # —— 获取新帧 ——
         frame = self.decoder.read()
         self.save_frame(self.frame_num, frame)
@@ -191,30 +199,67 @@ class ScrcpyEnv(gym.Env):
                     continue
 
     def _compute_reward(self, dets, action:int) -> float:
-        if len(dets) == 0:
-            return False
-
         reward = 0
+
+        if action in [1, 8]:  # 左/左上
+            reward += 1  # 鼓励其他方向
+
+        # if action in [9, 10]:  # 左/左上
+        #     reward += 1  # 鼓励其他方向
 
         if action == 0:
             print("未有操作，扣分!")
-            reward -= 5
+            reward -= 2
+
+        if action == self.last_action:
+            self.action_counter += 1
+            print(f"连续执行动作{action} ({self.action_counter}/5)")
+
+            # 连续5次执行同一动作时扣分
+            if self.action_counter >= 5:
+                print(f"⚠️ 连续5次执行动作{action}，扣分！")
+                self.action_counter = 0  # 重置计数器
+                reward -= 10  # 重复惩罚
+        else:
+            # 动作改变时重置计数器
+            self.action_counter = 1
+            self.last_action = action
+
+        if len(dets) == 0:
+            return reward
 
         for d in dets:
             cls_name = d["cls"]
             if cls_name == "DefeatTips":
-                print("游戏结束")
-            if cls_name == "SkillCD" and action == 10:
-                print("操作冷却中的技能，扣分!")
+                continue
+
+            if cls_name == "EnemyBloodLoss":
+                print("敌方掉血，加分")
+                reward += 10
+                continue
+
+            if cls_name == "HeroBloodLoss":
+                print("玩家掉血，扣分")
                 reward -= 5
+                continue
+
+            # if cls_name == "SkillCD" and action == 10:
+            #     print("操作冷却中的技能，扣分!")
+            #     reward -= 5
+            #     continue
+
             if cls_name == "LowHP":
                 print("血量过低， 扣分!")
                 reward -= 5
-            if cls_name == "KillEnemy":
-                print("击杀敌人， 加分!")
-                reward += 20
+                continue
 
-        return 0
+            if cls_name == "KillEnemy" and d["conf"] >=0.85:
+                print("击杀敌人， 加分!")
+                reward += 100
+                print(d)
+                continue
+
+        return reward
 
     def _is_game_over(self, dets) -> bool:
         if len(dets) == 0:
@@ -223,9 +268,12 @@ class ScrcpyEnv(gym.Env):
         for d in dets:
             cls_name = d["cls"]
 
-            if cls_name == "DefeatTips":
+            if cls_name in ["DefeatTips", "ContinueBtn"]:
+                # 游戏失败会直接跳转到失败界面，然后需要确认退出
+                # 游戏胜利时候会直接出现有继续的按钮的页面
                 print("游戏结束")
                 return True
+
             if cls_name in ["SkillCD", "SkillFull"]:
                 return False
 
