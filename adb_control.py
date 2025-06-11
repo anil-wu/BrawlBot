@@ -11,14 +11,28 @@ from typing import Optional
 class AdbControl:
     def __init__(self, serial: Optional[str] = None):
         self.serial = serial
+        self.device_is_connected = True
 
     # ─────────── 内部工具 ───────────
     def _adb(self, cmd: str) -> None:
         base = ["adb"] + (["-s", self.serial] if self.serial else [])
         full = base + shlex.split(cmd)
-        res = subprocess.run(full, capture_output=True, text=True)
-        if res.returncode:
-            raise RuntimeError(f"ADB FAILED: {' '.join(full)}\n{res.stderr}")
+        try:
+            res = subprocess.run(
+                full,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if res.returncode:
+                self.device_is_connected = False
+            else:
+                self.device_is_connected = True
+
+        except subprocess.TimeoutExpired:
+            print(f"[ADB Warning] Command timeout: {' '.join(full)}")
+        except Exception as e:
+            print(f"[ADB Warning] Error: {str(e)}")
 
     # ─────────── 基础注入 ───────────
     def tap(self, x: int, y: int):
@@ -36,3 +50,6 @@ class AdbControl:
 
     def key(self, keycode: int):
         self._adb(f"shell input keyevent {keycode}")
+    def check_adb_link(self):
+        self._adb("shell echo hello")
+        return self.device_is_connected
