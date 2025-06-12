@@ -86,30 +86,30 @@ def main(config):
             # 在回调列表中添加
             entropy_callback = EntropyScheduleCallback(
                 initial_coef=0.5,
-                final_coef=0.01,
-                decay_steps=10000
+                final_coef=0.1,  # 提高最终熵系数
+                decay_steps=30000  # 延长衰减步数
             )
 
             steps = 2048
+            total_timesteps = 100000
             # # 3️⃣ 训练 PPO
             model = PPO(
                 "CnnPolicy",
                 vec_env,
                 n_steps=steps,
                 batch_size=64,
-                n_epochs=10,    # 添加epoch参数
+                n_epochs=10,    # 添加 epoch 参数
                 learning_rate=3e-4,
                 clip_range=0.2,
-                ent_coef=0.1,  # 增加熵系数促进探索
-                gamma=0.99,     # 提高长期回报考量
+                gamma=0.95,     # 长期回报考量
                 tensorboard_log="./runs",  # 确保TensorBoard日志目录存在
                 verbose=1,
             )
 
             # ===== 训练时传入回调 =====
             model.learn(
-                total_timesteps=steps,
-                callback=[checkpoint_callback, eval_callback],  # 添加回调
+                total_timesteps=total_timesteps,
+                callback=[checkpoint_callback, eval_callback, entropy_callback],  # 添加回调
                 tb_log_name="荒野乱斗智能玩家"  # TensorBoard实验名称
             )
             model.save("BrawlStars")
