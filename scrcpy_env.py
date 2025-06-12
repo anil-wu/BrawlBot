@@ -240,29 +240,21 @@ class ScrcpyEnv(gym.Env):
     def _compute_reward(self, dets, action:int) -> float:
         reward = 0
 
-        if action in [1, 8]:  # 左/左上
-            reward += 1  # 鼓励其他方向
+        # 所有移动方向均给予基础奖励
+        if 1 <= action <= 8:
+            reward += 1.0  # 鼓励移动
 
-        if action in [9, 10]:  # 左/左上
-            reward += 1  # 鼓励其他方向
+        # 攻击动作给予适度奖励（即使未命中）
+        if action == 9:
+            reward += 0.5
 
-        if action == 0:
-            print("未有操作，扣分!")
-            reward -= 2
-
+        # 调整重复惩罚机制
         if action == self.last_action:
             self.action_counter += 1
-            print(f"连续执行动作{action} ({self.action_counter}/5)")
-
-            # 连续5次执行同一动作时扣分
-            if self.action_counter >= 5:
-                print(f"⚠️ 连续5次执行动作{action}，扣分！")
-                self.action_counter = 0  # 重置计数器
-                reward -= 10  # 重复惩罚
+            # 阶梯式惩罚：重复次数越多惩罚越重
+            reward -= min(2 * self.action_counter, 10)
         else:
-            # 动作改变时重置计数器
-            self.action_counter = 1
-            self.last_action = action
+            self.action_counter = 0
 
         if len(dets) == 0:
             return reward
@@ -274,7 +266,7 @@ class ScrcpyEnv(gym.Env):
 
             if cls_name == "EnemyBloodLoss":
                 print("敌方掉血，加分")
-                reward += 10
+                reward += 5
                 continue
 
             if cls_name == "HeroBloodLoss":
@@ -282,19 +274,19 @@ class ScrcpyEnv(gym.Env):
                 reward -= 5
                 continue
 
-            # if cls_name == "SkillCD" and action == 10:
-            #     print("操作冷却中的技能，扣分!")
-            #     reward -= 5
-            #     continue
+            if cls_name == "SkillCD" and action == 10:
+                print("操作冷却中的技能，扣分!")
+                reward -= 1
+                continue
 
             if cls_name == "LowHP":
                 print("血量过低， 扣分!")
-                reward -= 5
+                reward -= 1
                 continue
 
             if cls_name == "KillEnemy" and d["conf"] >=0.85:
                 print("击杀敌人， 加分!")
-                reward += 100
+                reward += 50
                 print(d)
                 continue
 
