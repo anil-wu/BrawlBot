@@ -56,7 +56,7 @@ class ScrcpyEnv(gym.Env):
         self.action_counter = 0  # 新增：连续执行同一动作的计数器
 
         # —— 关键：把 observation_space 改成 (C, H, W) ——
-        h, w = resize[1], resize[0]
+        h, w = self.resize[1], self.resize[0]
         c = frame_stack * 3                     # 3 通道 × 堆叠帧
         self.observation_space = Box(0, 255, (c, h, w), np.uint8)
 
@@ -107,7 +107,7 @@ class ScrcpyEnv(gym.Env):
                     self.ctrl.tap(*pot)
                     continue
 
-                if cls_name in ["SkillCD", "SkillFull"]:
+                if cls_name in ["SkillCD", "SkillFull", "InBattle"]:
                     isStart =True
                     break
 
@@ -115,6 +115,7 @@ class ScrcpyEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         print("重置环境")
         super().reset(seed=seed)
+
         while True:
             time.sleep(1)
             # 加入循环体？等待重连
@@ -145,6 +146,7 @@ class ScrcpyEnv(gym.Env):
                 print("设备已断开连接 ")
 
         self.batel_num +=1
+        self.ctrl.touch_down(JOY_CX, JOY_CY)
         print("开始战斗... 场次", self.batel_num)
         return self._obs(), {}
 
@@ -161,9 +163,10 @@ class ScrcpyEnv(gym.Env):
         # —— 动作 → 触控 ——
         if 1 <= action <= 8:                       # 摇杆方向
             dx, dy = DIR_VECS[action - 1]
-            tx = int(JOY_CX + dx * JOY_R)
-            ty = int(JOY_CY + dy * JOY_R)
-            self.ctrl.swipe(JOY_CX, JOY_CY, tx, ty, dur_ms=300)
+            x = int(JOY_CX + dx * JOY_R)
+            y = int(JOY_CY + dy * JOY_R)
+            self.ctrl.touch_move(x, y)
+            # self.ctrl.swipe(JOY_CX, JOY_CY, tx, ty, dur_ms=300)
         elif action == 9:                          # 普通攻击
             self.ctrl.tap(*ATTACK_BTN)
         elif action == 10:                         # 技能
@@ -191,8 +194,6 @@ class ScrcpyEnv(gym.Env):
         self.save_frame(self.frame_num, frame)
         self.frames.append(frame)
 
-
-
         dets = self.detector.detect(frame)
         terminated =  self._is_game_over(dets)
 
@@ -201,9 +202,9 @@ class ScrcpyEnv(gym.Env):
         else:
             reward += self._compute_reward(dets, action)
             moved, offset, cur_center =  self.monitor.check_movement(frame)
-            print(f"移动: {moved}, 偏移: {offset}")
             if moved is False:
-                reward -= 0.5
+                print("未移动, 扣分")
+                reward -= 1
 
         return self._obs(), reward, terminated, truncated, info
 
@@ -248,6 +249,7 @@ class ScrcpyEnv(gym.Env):
                 if cls_name == "ContinueBtn":
                     is_settlement_status = True
                     continue
+        return 0
 
     def _compute_reward(self, dets, action:int) -> float:
         reward = 0
@@ -296,7 +298,7 @@ class ScrcpyEnv(gym.Env):
                 reward -= 1
                 continue
 
-            if cls_name == "KillEnemy" and d["conf"] >=0.85:
+            if cls_name == "KillEnemy" and d["conf"] >=0.95:
                 print("击杀敌人， 加分!")
                 reward += 50
                 print(d)
