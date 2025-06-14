@@ -26,6 +26,7 @@ class AdbControl:
             )
             if res.returncode:
                 self.device_is_connected = False
+                print(f"Error: {res.stderr}")
             else:
                 self.device_is_connected = True
 
@@ -48,8 +49,19 @@ class AdbControl:
         self._adb(f"shell sendevent /dev/input/event0 3 57 0")  # start touch
         self._adb(f"shell input swipe {x} {y} {x} {y} {hold_ms}")
 
+    def touch_down(self, x: int, y: int):
+        # self._adb(f"shell sendevent /dev/input/event0 3 57 0")  # start touch
+        self._adb(f"shell input motionevent DOWN {x} {y}")
+
+    def touch_move(self, x: int, y: int):
+        self._adb(f"shell input motionevent MOVE {x} {y}")  # end move
+
+    def touch_up(self):
+        self._adb(f"input touchscreen up")  # end touch
+
     def key(self, keycode: int):
         self._adb(f"shell input keyevent {keycode}")
+
     def check_adb_link(self):
         self._adb("shell echo hello")
         return self.device_is_connected

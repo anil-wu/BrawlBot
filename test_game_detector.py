@@ -56,24 +56,14 @@ try:
         ctrl = AdbControl(None)
         Episode = 0
         frame_num = 0
+        ctrl.touch_down(400, 930)
+        p = 360
+        count  = 0
         while True :
             time.sleep(0.1)
-            frame_num += 1
-            frame = decoder.read()
-            if frame is None: continue
+            agnel = count
+            ctrl.move(400, 930)
 
-            get_game_state(frame, gameDetector, ctrl)
-            # save_frame(Episode, frame_num, frame)
-            # state = get_game_state(frame)
-            # print(f"[game_state] 当前状态: {state}")
-            # if state == GameState.LOBBY:
-            #     #ctrl.tap(*BATTLE_BTN)
-            # elif state == GameState.DEFEAT:
-            #     #ctrl.tap(*DEFEAT_BTN)
-            # elif state == GameState.GO_ON:
-            #     ctrl.tap(*GO_ON_BTN)
-            # elif state == GameState.SETTLE:
-            #     ctrl.tap(*PLAY_AGIN_BTN)
 
 
 except KeyboardInterrupt:
