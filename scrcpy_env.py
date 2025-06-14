@@ -10,6 +10,7 @@ from gymnasium.spaces import Box, Discrete
 from scrcpy_video import VideoDecoder
 from adb_control import AdbControl
 from env_launcher import ScrcpyLauncher
+from checker_monitor import ColorCheckerMonitor
 from game_detector import GameDetector, GameState
 
 # ——————————— 屏幕&摇杆参数 ———————————
@@ -61,6 +62,12 @@ class ScrcpyEnv(gym.Env):
 
         self.frames: Deque[np.ndarray] = deque(maxlen=frame_stack)
         self.frame_num = 0
+        # 动作计数器（长度=动作空间大小）
+        self.action_counts = [0] * 11
+        self.step_counter = 0  # 当前窗口步数计数器
+
+        roi = (int(w/2), int(h/2), 300, 150)
+        self.monitor = ColorCheckerMonitor(roi)
 
     def execute_battle_flow(self):
         isStart = False
@@ -162,6 +169,10 @@ class ScrcpyEnv(gym.Env):
         elif action == 10:                         # 技能
             self.ctrl.tap(*SKILL_BTN)
 
+        # 更新动作计数器
+        self.action_counts[action] += 1
+        self.step_counter += 1
+
         if  not self.ctrl.check_adb_link() :
             terminated = True
             obs = self._obs()
@@ -169,7 +180,7 @@ class ScrcpyEnv(gym.Env):
             print("[train_agent] ADB连接已断开，已安全退出。")
             return obs, reward, terminated, truncated, info
 
-        time.sleep(0.1)
+        # time.sleep(0.1)
 
 
         # —— 获取新帧 ——
@@ -180,6 +191,8 @@ class ScrcpyEnv(gym.Env):
         self.save_frame(self.frame_num, frame)
         self.frames.append(frame)
 
+
+
         dets = self.detector.detect(frame)
         terminated =  self._is_game_over(dets)
 
@@ -187,16 +200,15 @@ class ScrcpyEnv(gym.Env):
             reward += self._settlement_reward()
         else:
             reward += self._compute_reward(dets, action)
+            moved, offset, cur_center =  self.monitor.check_movement(frame)
+            print(f"移动: {moved}, 偏移: {offset}")
+            if moved is False:
+                reward -= 0.5
 
         return self._obs(), reward, terminated, truncated, info
 
     # -------------- 工具 --------------
     def _obs(self) -> np.ndarray:
-        """
-        返回 (C, H, W) uint8 张量，满足 stable-baselines3 CnnPolicy 需求：
-            - 先把 (stack, H, W, 3) 转为 (stack, 3, H, W)
-            - 再合并 stack 与 3 两个通道维度 → (stack*3, H, W)
-        """
         arr = np.stack(self.frames, axis=0)               # (k, H, W, 3)
         arr = arr.transpose(0, 3, 1, 2)                   # (k, 3, H, W)
         c, h, w = arr.shape[0] * arr.shape[1], arr.shape[2], arr.shape[3]
