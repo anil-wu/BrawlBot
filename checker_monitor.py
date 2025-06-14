@@ -66,7 +66,7 @@ class ColorCheckerMonitor:
 
         # 特征点不足处理
         if cur_desc is None or len(cur_kp) < 4:
-            # print("警告: 当前帧特征点不足，保留参考帧")
+            print("警告: 当前帧特征点不足，保留参考帧")
             return True, float('inf'), None
 
         # 匹配特征点
@@ -74,7 +74,7 @@ class ColorCheckerMonitor:
 
         # 匹配点不足处理
         if len(matches) < 4:
-            # print(f"警告: 匹配点不足({len(matches)}个)，更新参考帧")
+            print(f"警告: 匹配点不足({len(matches)}个)，更新参考帧")
             self._update_reference(cur_kp, cur_desc)
             return True, float('inf'), None
 
@@ -91,7 +91,7 @@ class ColorCheckerMonitor:
 
         # 检查匹配质量
         if inliers < self.min_inliers or inlier_ratio < self.inlier_ratio_threshold:
-            # print(f"警告: 匹配质量差(内点:{inliers}/{len(matches)}，比例:{inlier_ratio:.2f})，更新参考帧")
+            print(f"警告: 匹配质量差(内点:{inliers}/{len(matches)}，比例:{inlier_ratio:.2f})，更新参考帧")
             self._update_reference(cur_kp, cur_desc)
             return True, float('inf'), None
 

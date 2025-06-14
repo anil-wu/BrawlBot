@@ -166,11 +166,14 @@ class ScrcpyEnv(gym.Env):
             x = int(JOY_CX + dx * JOY_R)
             y = int(JOY_CY + dy * JOY_R)
             self.ctrl.touch_move(x, y)
-            # self.ctrl.swipe(JOY_CX, JOY_CY, tx, ty, dur_ms=300)
         elif action == 9:                          # 普通攻击
             self.ctrl.tap(*ATTACK_BTN)
         elif action == 10:                         # 技能
             self.ctrl.tap(*SKILL_BTN)
+
+        if action == 0 or action > 8:
+            self.ctrl.touch_down(JOY_CX, JOY_CY)
+
 
         # 更新动作计数器
         self.action_counts[action] += 1
@@ -202,7 +205,7 @@ class ScrcpyEnv(gym.Env):
         else:
             reward += self._compute_reward(dets, action)
             moved, offset, cur_center =  self.monitor.check_movement(frame)
-            if moved is False:
+            if not moved:
                 print("未移动, 扣分")
                 reward -= 1
 
